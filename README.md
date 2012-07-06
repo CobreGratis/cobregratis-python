@@ -40,7 +40,3 @@ Comentários são bem-vindos. Envie seu feedback através do [issue tracker do G
 Blog: [http://rafael.adm.br](http://rafael.adm.br)
 
 Twitter: [http://twitter.com/rafaelp](http://twitter.com/rafaelp)
-
-### Gostou?
-
-[Me recomende Working With Rails](http://workingwithrails.com/recommendation/new/person/14248-rafael-lima)
