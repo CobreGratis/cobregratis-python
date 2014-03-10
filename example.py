@@ -6,14 +6,21 @@ from pyactiveresource.connection import UnauthorizedAccess
 import sys
 
 def main():
-  BankBillet.user = 'hcIVKwZiNwRazGg90yc4H952qNGxLtxFVBRp95Ex2CtzdjbQS4E7vFNkzBGA'
+  BankBillet.user = 'token encontrado no perfil do usuário'
   BankBillet.password = 'X'
   try:
+    # Criando um boleto
     amount = 230.50
     expire_at = '2015-07-22'
     name = 'Rafael Lima'
     bank_billet = BankBillet.create({'amount':amount,'expire_at':expire_at,'name':name})
+    print bank_billet.external_link
+    
+    # Buscando informações sobre um boleto passando seu ID
+    bank_billet = BankBillet.find(1)
+    print bank_billet.external_link
 
+    # Listando uma série de boletos
     bank_billets = BankBillet.find()
     if not bank_billets:
       print "Nenhum boleto bancário"
