@@ -1,3 +1,4 @@
+#!/usr/bin/python2.4
 # Copyright 2008 Google Inc. All Rights Reserved.
 
 """Fake urllib2 HTTP connection objects."""
@@ -5,7 +6,6 @@
 __author__ = 'Mark Roach (mrroach@google.com)'
 
 
-import urllib
 import urllib2
 import urlparse
 from StringIO import StringIO
@@ -22,36 +22,15 @@ def initialize():
     urllib2.install_opener(opener)
 
 
-def create_response_key(method, url, request_headers):
-    """Create the response key for a request.
+def capitalize_keys(dictionary):
+    """Capitalize a dictionary's keys.
 
     Args:
-        method: The http method (e.g. 'get', 'put', etc.)
-        url: The path being requested including site.
-        request_headers: Dictionary of headers passed along with the request.
+      dictionary: The dictionary to convert.
     Returns:
-        The key as a string.
+      A dictionary with capitalized keys.
     """
-    parsed = urlparse.urlsplit(url)
-    qs = urlparse.parse_qs(parsed.query)
-    query = urllib.urlencode([(k, qs[k]) for k in sorted(qs.iterkeys())])
-    return str((
-        method,
-        urlparse.urlunsplit((
-            parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment)),
-        dictionary_to_canonical_str(request_headers)))
-
-
-def dictionary_to_canonical_str(dictionary):
-    """Create canonical string from a dictionary.
-
-    Args:
-        dictionary: The dictionary to convert.
-    Returns:
-        A string of the dictionary in canonical form.
-    """
-    return str([(k.capitalize(), dictionary[k]) for k in sorted(
-        dictionary.iterkeys())])
+    return dict([(k.capitalize(), v) for k, v in dictionary.iteritems()])
 
 
 class TestHandler(urllib2.HTTPHandler, urllib2.HTTPSHandler):
@@ -79,7 +58,7 @@ class TestHandler(urllib2.HTTPHandler, urllib2.HTTPSHandler):
 
         Args:
             method: The http method (e.g. 'get', 'put' etc.)
-            path: The path being requested (e.g. '/collection/id.json')
+            path: The path being requested (e.g. '/collection/id.xml')
             request_headers: Dictionary of headers passed along with the request
             body: The string that should be returned for a matching request
             code: The http response code to return
@@ -87,8 +66,8 @@ class TestHandler(urllib2.HTTPHandler, urllib2.HTTPSHandler):
         Returns:
             None
         """
-        key = create_response_key(method, urlparse.urljoin(cls.site, path),
-                                  request_headers)
+        key = (method, urlparse.urljoin(cls.site, path),
+               capitalize_keys(request_headers))
         value = (code, body, response_headers)
         cls._response_map[str(key)] = value
 
@@ -106,8 +85,9 @@ class TestHandler(urllib2.HTTPHandler, urllib2.HTTPSHandler):
         """
         self.__class__.request = request  # Store the most recent request object
         if self._response_map:
-            key = create_response_key(
-                request.get_method(), request.get_full_url(), request.headers)
+            key = (request.get_method(),
+                   request.get_full_url(),
+                   capitalize_keys(request.headers))
             if str(key) in self._response_map:
                 (code, body, response_headers) = self._response_map[str(key)]
                 return FakeResponse(code, body, response_headers)
