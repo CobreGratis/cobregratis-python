@@ -1,4 +1,3 @@
-#!/usr/bin/python2.4
 # Copyright 2008 Google, Inc. All Rights Reserved.
 
 """A connection object to interface with REST services."""
@@ -190,7 +189,8 @@ class Connection(object):
     """A connection object to interface with REST services."""
 
     def __init__(self, site, user=None, password=None, timeout=None,
-                 format=formats.XMLFormat):
+                 format=formats.JSONFormat):
+    
         """Initialize a new Connection object.
 
         Args:
@@ -257,14 +257,14 @@ class Connection(object):
         request = self._request(url)
         request.set_method(method)
         if headers:
-            for key, value in headers.items():
+            for key, value in headers.iteritems():
                 request.add_header(key, value)
         if self.auth:
             # Insert basic authentication header
             request.add_header('Authorization', 'Basic %s' % self.auth)
         if request.headers:
             header_string = '\n'.join([':'.join((k, v)) for k, v in
-                                       request.headers.items()])
+                                       request.headers.iteritems()])
             self.log.debug('request-headers:%s', header_string)
         if data:
             request.add_header('Content-Type', self.format.mime_type)

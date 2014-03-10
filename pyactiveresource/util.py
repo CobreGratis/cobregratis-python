@@ -1,4 +1,3 @@
-#!/usr/bin/python2.4
 # Copyright 2008 Google Inc. All Rights Reserved.
 
 """Utilities for pyActiveResource."""
@@ -17,6 +16,14 @@ try:
     import yaml
 except ImportError:
     yaml = None
+
+try:
+    import simplejson as json
+except ImportError:
+    try:
+        import json
+    except ImportError:
+        json = None
 
 try:
     from dateutil.parser import parse as date_parse
@@ -273,6 +280,47 @@ def serialize(value, element):
             break
 
 
+def to_json(obj, root='object'):
+    """Convert a dictionary or list to an JSON string.
+
+    Args:
+        obj: The object to serialize.
+
+    Returns:
+        A json string.
+    """
+    if root:
+        obj = { root: obj }
+    return json.dumps(obj)
+
+
+def json_to_dict(jsonstr):
+    """Parse the json into a dictionary of attributes.
+
+    Args:
+        jsonstr: A JSON formatted string.
+    Returns:
+        The deserialized object.
+    """
+    return json.loads(jsonstr)
+
+
+def _to_xml_element(obj, root, dasherize):
+    root = dasherize and root.replace('_', '-') or root
+    root_element = ET.Element(root)
+    if isinstance(obj, list):
+        root_element.set('type', 'array')
+        for value in obj:
+            root_element.append(_to_xml_element(value, singularize(root), dasherize))
+    elif isinstance(obj, dict):
+        for key, value in obj.iteritems():
+            root_element.append(_to_xml_element(value, key, dasherize))
+    else:
+        serialize(obj, root_element)
+
+    return root_element
+
+
 def to_xml(obj, root='object', pretty=False, header=True, dasherize=True):
     """Convert a dictionary or list to an XML string.
 
@@ -286,26 +334,7 @@ def to_xml(obj, root='object', pretty=False, header=True, dasherize=True):
     Returns:
         An xml string.
     """
-    root = dasherize and root.replace('_', '-') or root
-    root_element = ET.Element(root)
-    if isinstance(obj, list):
-        root_element.set('type', 'array')
-        for i in obj:
-            element = ET.fromstring(
-                    to_xml(i, root=singularize(root), header=False,
-                           pretty=pretty, dasherize=dasherize))
-            root_element.append(element)
-    else:
-        for key, value in obj.iteritems():
-            key = dasherize and key.replace('_', '-') or key
-            if isinstance(value, dict) or isinstance(value, list):
-                element = ET.fromstring(
-                    to_xml(value, root=key, header=False,
-                           pretty=pretty, dasherize=dasherize))
-                root_element.append(element)
-            else:
-                element = ET.SubElement(root_element, key)
-                serialize(value, element)
+    root_element = _to_xml_element(obj, root, dasherize)
     if pretty:
         xml_pretty_format(root_element)
     xml_data = ET.tostring(root_element)
@@ -339,11 +368,7 @@ def xml_to_dict(xmlobj, saveroot=True):
         element_list_type = element.tag.replace('-', '_')
         return_list = element_containers.ElementList(element_list_type)
         for child in element.getchildren():
-            child_element = xml_to_dict(child, saveroot)
-            if saveroot and isinstance(child_element, dict):
-                  return_list.append(child_element.values()[0])
-            else:
-                  return_list.append(child_element)
+            return_list.append(xml_to_dict(child, saveroot=False))
         if saveroot:
             return element_containers.ElementDict(element_list_type,
                                                   {element_list_type:
@@ -407,14 +432,8 @@ def xml_to_dict(xmlobj, saveroot=True):
             attributes = element_containers.ElementDict(singularize(
                 element.tag.replace('-', '_')), element.items())
         for child in element.getchildren():
-            attribute = xml_to_dict(child, saveroot)
+            attribute = xml_to_dict(child, saveroot=False)
             child_tag = child.tag.replace('-', '_')
-            if saveroot:
-                # If this is a nested hash, it will come back as
-                # {child_tag: {key: value}}, we only want the inner hash
-                if isinstance(attribute, dict):
-                    if len(attribute) == 1 and child_tag in attribute:
-                        attribute = attribute[child_tag]
             # Handle multiple elements with the same tag name
             if child_tag in attributes:
                 if isinstance(attributes[child_tag], list):
@@ -433,11 +452,3 @@ def xml_to_dict(xmlobj, saveroot=True):
                                               element.items())
     else:
         return element.text
-
-
-def main():
-    pass
-
-
-if __name__ == '__main__':
-    main()

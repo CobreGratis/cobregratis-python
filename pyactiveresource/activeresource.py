@@ -1,10 +1,8 @@
-#!/usr/bin/python2.4
 # Authors: Jared Kuolt <me@superjared.com>, Mark Roach <mrroach@google.com>
 
 """Connect to and interact with a REST server and its objects."""
 
 
-import new
 import re
 import sys
 import urllib
@@ -75,6 +73,25 @@ class Errors(object):
         """
         self.errors = {}
 
+    def from_array(self, messages):
+        attribute_keys = self.base.attributes.keys()
+        for message in messages:
+            attr_name = message.split()[0]
+            key = util.underscore(attr_name)
+            if key in attribute_keys:
+                self.add(key, message[len(attr_name)+1:])
+            else:
+                self.add_to_base(message)
+
+    def from_hash(self, messages):
+        attribute_keys = self.base.attributes.keys()
+        for key, errors in messages.iteritems():
+            for message in errors:
+                if key in attribute_keys:
+                    self.add(key, message)
+                else:
+                    self.add_to_base(message)
+
     def from_xml(self, xml_string):
         """Grab errors from an XML response.
 
@@ -83,21 +100,38 @@ class Errors(object):
         Returns:
             None
         """
-        attribute_keys = self.base.attributes.keys()
         try:
-            messages = util.xml_to_dict(
-                    xml_string)['errors']['error']
+            messages = util.xml_to_dict(xml_string)['errors']['error']
             if not isinstance(messages, list):
                 messages = [messages]
         except util.Error:
             messages = []
-        for message in messages:
-            attr_name = message.split()[0]
-            key = util.underscore(attr_name)
-            if key in attribute_keys:
-                self.add(key, message[len(attr_name)+1:])
+        self.from_array(messages)
+
+    def from_json(self, json_string):
+        """Grab errors from a JSON response.
+
+        Args:
+            json_string: An json errors object (e.g. "{ 'errors': {} }")
+        Returns:
+            None
+        """
+        try:
+            decoded = util.json_to_dict(json_string)
+        except ValueError:
+            decoded = {}
+        if not decoded:
+            decoded = {}
+        if isinstance(decoded, dict) and (decoded.has_key('errors') or len(decoded) == 0):
+            errors = decoded.get('errors', {})
+            if isinstance(errors, list):
+                # Deprecated in ActiveResource
+                self.from_array(errors)
             else:
-                self.add_to_base(message)
+                self.from_hash(errors)
+        else:
+            # Deprecated in ActiveResource
+            self.from_hash(decoded)
 
     def on(self, attribute):
         """Return the errors for the given attribute.
@@ -122,7 +156,7 @@ class Errors(object):
             An array of error strings.
         """
         messages = []
-        for key, errors in self.errors.items():
+        for key, errors in self.errors.iteritems():
             for error in errors:
                 if key == 'base':
                     messages.append(error)
@@ -231,6 +265,7 @@ class ResourceMeta(type):
 
     def set_headers(cls, value):
         cls._headers = value
+    
     headers = property(get_headers, set_headers, None,
                        'HTTP headers.')
 
@@ -240,6 +275,7 @@ class ResourceMeta(type):
     def set_timeout(cls, value):
         cls._connection = None
         cls._timeout = value
+    
     timeout = property(get_timeout, set_timeout, None,
                        'Socket timeout for HTTP operations')
 
@@ -249,6 +285,7 @@ class ResourceMeta(type):
     def set_format(cls, value):
         cls._connection = None
         cls._format = value
+    
     format = property(get_format, set_format, None,
                        'A format object for encoding/decoding requests')
 
@@ -257,6 +294,7 @@ class ResourceMeta(type):
 
     def set_plural(cls, value):
         cls._plural = value
+    
     plural = property(get_plural, set_plural, None,
                       'The plural name of this object type.')
 
@@ -265,6 +303,7 @@ class ResourceMeta(type):
 
     def set_singular(cls, value):
         cls._singular = value
+    
     singular = property(get_singular, set_singular, None,
                         'The singular name of this object type.')
 
@@ -301,7 +340,7 @@ class ActiveResource(object):
 
     __metaclass__ = ResourceMeta
     _connection = None
-    _format = formats.XMLFormat
+    _format = formats.JSONFormat
     _headers = None
     _password = None
     _site = None
@@ -578,7 +617,7 @@ class ActiveResource(object):
         return '%(prefix)s/%(plural)s.%(format)s%(query)s' % {
                 'prefix': cls._prefix(prefix_options),
                 'plural': cls._plural,
-                'format': cls._format.extension,
+                'format': cls.format.extension,
                 'query': cls._query_string(query_options)}
 
     @classmethod
@@ -713,17 +752,20 @@ class ActiveResource(object):
         for key, value in self.attributes.iteritems():
             if isinstance(value, list):
                 new_value = []
-                for i in value:
-                  if isinstance(i, dict):
-                      new_value.append(i)
+                for item in value:
+                  if isinstance(item, ActiveResource):
+                      new_value.append(item.to_dict())
                   else:
-                      new_value.append(i.to_dict())
+                      new_value.append(item)
                 values[key] = new_value
             elif isinstance(value, ActiveResource):
                 values[key] = value.to_dict()
             else:
                 values[key] = value
         return values
+
+    def encode(self, **options):
+        return getattr(self, "to_" + self.klass.format.extension)(**options)
 
     def to_xml(self, root=None, header=True, pretty=False, dasherize=True):
         """Convert the object to an xml string.
@@ -741,6 +783,12 @@ class ActiveResource(object):
         return util.to_xml(self.to_dict(), root=root,
                            header=header, pretty=pretty,
                            dasherize=dasherize)
+
+    def to_json(self, root=True):
+        """Convert the object to a json string."""
+        if root == True:
+            root = self._singular
+        return util.to_json(self.to_dict(), root=root)
 
     def reload(self):
         """Connect to the server and update this resource's attributes.
@@ -772,17 +820,20 @@ class ActiveResource(object):
                 response = self.klass.connection.put(
                         self._element_path(self.id, self._prefix_options),
                         self.klass.headers,
-                        data=self.to_xml())
+                        data=self.encode())
             else:
                 response = self.klass.connection.post(
                         self._collection_path(self._prefix_options),
                         self.klass.headers,
-                        data=self.to_xml())
+                        data=self.encode())
                 new_id = self._id_from_response(response)
                 if new_id:
                     self.id = new_id
         except connection.ResourceInvalid, err:
-            self.errors.from_xml(err.response.body)
+            if self.klass.format == formats.XMLFormat:
+                self.errors.from_xml(err.response.body)
+            elif self.klass.format == formats.JSONFormat:
+                self.errors.from_json(err.response.body)
             return False
         try:
             attributes = self.klass.format.decode(response.body)
@@ -883,7 +934,7 @@ class ActiveResource(object):
             return cmp(self.id, other)
 
     def __hash__(self):
-        return hash(tuple(self.attributes.items()))
+        return hash(tuple(self.attributes.iteritems()))
 
     def _update(self, attributes):
         """Update the object with the given attributes.
@@ -895,13 +946,20 @@ class ActiveResource(object):
         """
         if not isinstance(attributes, dict):
             return
-        for key, value in attributes.items():
+        for key, value in attributes.iteritems():
             if isinstance(value, dict):
                 klass = self._find_class_for(key)
                 attr = klass(value)
             elif isinstance(value, list):
-                klass = self._find_class_for_collection(key)
-                attr = [klass(child) for child in value]
+                klass = None
+                attr = []
+                for child in value:
+                    if isinstance(child, dict):
+                        if klass is None:
+                            klass = self._find_class_for_collection(key)
+                        attr.append(klass(child))
+                    else:
+                        attr.append(child)
             else:
                 attr = value
             # Store the actual value in the attributes dictionary
@@ -943,7 +1001,7 @@ class ActiveResource(object):
             class_name = util.camelize(element_name)
 
         module_path = cls.__module__.split('.')
-        for depth in range(len(module_path), 0, -1):
+        for depth in xrange(len(module_path), 0, -1):
             try:
                 __import__('.'.join(module_path[:depth]))
                 module = sys.modules['.'.join(module_path[:depth])]
@@ -967,8 +1025,7 @@ class ActiveResource(object):
 
         # If we made it this far, no such class was found
         if create_missing:
-            return new.classobj(class_name, (cls,),
-                                {'__module__': cls.__module__})
+            return type(str(class_name), (cls,), {'__module__': cls.__module__})
 
     # methods corresponding to Ruby's custom_methods
     def _custom_method_element_url(self, method_name, options):
@@ -988,7 +1045,7 @@ class ActiveResource(object):
              'plural': self._plural,
              'id': self.id,
              'method_name': method_name,
-             'format': self._format.extension,
+             'format': self.klass.format.extension,
              'query': self._query_string(query_options)})
         return path
 
@@ -1008,7 +1065,7 @@ class ActiveResource(object):
             {'prefix': self.klass.prefix(prefix_options),
              'plural': self._plural,
              'method_name': method_name,
-             'format': self._format.extension,
+             'format': self.klass.format.extension,
              'query': self._query_string(query_options)})
         return path
 
@@ -1038,7 +1095,7 @@ class ActiveResource(object):
             url = self._custom_method_element_url(method_name, kwargs)
         else:
             if not body:
-                body = self.to_xml()
+                body = self.encode()
             url = self._custom_method_new_element_url(method_name, kwargs)
         return self.klass.connection.post(url, self.klass.headers, body)
 

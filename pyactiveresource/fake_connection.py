@@ -1,4 +1,3 @@
-#!/usr/bin/python2.4
 # Copyright 2008 Google Inc. All Rights Reserved.
 
 """A fake HTTP connection for testing"""
@@ -23,8 +22,8 @@ class FakeConnection(object):
     
     Example:
     >>> connection = FakeConnection()
-    >>> body = '<?xml ... />'
-    >>> connection.respond_to('get', '/foos/1.xml', None, None, body)
+    >>> body = '<?json ... />'
+    >>> connection.respond_to('get', '/foos/1.json', None, None, body)
     >>> class Foo(resource.Resource):
     ...     _site = 'http://localhost/'
     ...
@@ -32,7 +31,7 @@ class FakeConnection(object):
     >>> Foo.find(1)
     foo(1)
     """
-    def __init__(self, format=formats.XMLFormat):
+    def __init__(self, format=formats.JSONFormat):
         """Constructor for FakeConnection object."""
         self.format = format
         self._request_map = {}
@@ -56,7 +55,7 @@ class FakeConnection(object):
         
         Args:
             method: The http method (e.g. 'get', 'put' etc.).
-            path: The path being requested (e.g. '/collection/id.xml')
+            path: The path being requested (e.g. '/collection/id.json')
             headers: Dictionary of headers passed along with the request.
             data: The data being passed in as the request body.
             body: The string that should be returned for a matching request.
